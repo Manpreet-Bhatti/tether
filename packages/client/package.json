@@ -1,0 +1,20 @@
+{
+  "name": "@tether/client",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@tether/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "zod": "^4.6.7"
+  }
+}
