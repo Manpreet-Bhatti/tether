@@ -1,4 +1,17 @@
 {
   "files": [],
-  "references": [{ "path": "packages/protocol" }]
+  "references": [
+    {
+      "path": "packages/protocol"
+    },
+    {
+      "path": "packages/client"
+    },
+    {
+      "path": "packages/react"
+    },
+    {
+      "path": "apps/tracker/shared"
+    }
+  ]
 }

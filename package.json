@@ -6,13 +6,15 @@
     "node": ">=26"
   },
   "scripts": {
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && pnpm -r --if-present typecheck",
     "test": "vitest run",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
-    "check:boundary": "! grep -rn \"apps/\" packages/*/src"
+    "check:boundary": "! grep -rn \"apps/\" packages/*/src",
+    "e2e": "tsc -b && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
