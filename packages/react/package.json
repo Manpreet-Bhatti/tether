@@ -1,0 +1,24 @@
+{
+  "name": "@tether/react",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@tether/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "react": "^19.3.1"
+  },
+  "peerDependencies": {
+    "react": "^19.3.1"
+  }
+}
