@@ -1,0 +1,22 @@
+{
+  "name": "@tether/server",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "sql"
+  ],
+  "dependencies": {
+    "@tether/protocol": "workspace:*",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "zod": "^4.6.7"
+  }
+}
