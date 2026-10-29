@@ -1,0 +1,19 @@
+{
+  "name": "@tether/tracker-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsc -b && node dist/main.js"
+  },
+  "dependencies": {
+    "@tether/server": "workspace:*",
+    "@tether/tracker-shared": "workspace:*",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.14",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@tether/client": "workspace:*"
+  }
+}
