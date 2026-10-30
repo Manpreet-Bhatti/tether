@@ -1,4 +1,4 @@
-import type { Tx } from "@tether/protocol";
+import type { PatchOp, Tx } from "@tether/protocol";
 
 export interface PushTxn {
   // Creates the client row on first use, then locks it. Concurrent pushes from one client serialize here.
@@ -13,7 +13,19 @@ export interface PushTxn {
   attempt(version: number, fn: (tx: Tx) => Promise<void>): Promise<void>;
 }
 
+export interface PullTxn {
+  head(clientId: string): Promise<{
+    userId?: string; // unset when the client never pushed
+    lastMutationId: number;
+    version: number;
+    minRetainedVersion: number;
+  }>;
+  snapshot(): Promise<PatchOp[]>;
+  changesSince(cookie: number): Promise<PatchOp[]>;
+}
+
 export interface ServerStorage {
-  // Commits when fn resolves, rolls back when it throws.
   transact<T>(fn: (t: PushTxn) => Promise<T>): Promise<T>;
+  read<T>(fn: (t: PullTxn) => Promise<T>): Promise<T>;
+  compactLog(retainVersions: number): Promise<void>;
 }

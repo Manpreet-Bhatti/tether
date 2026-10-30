@@ -4,6 +4,8 @@ create table if not exists meta (
 );
 insert into meta (id, version)
 values (1, 0) on conflict do nothing;
+-- change_log rows at or below this version are compacted away; older cookies need a full resync.
+alter table meta add column if not exists min_retained_version bigint not null default 0;
 create table if not exists entries (
   key text collate "C" primary key,
   value jsonb not null,
