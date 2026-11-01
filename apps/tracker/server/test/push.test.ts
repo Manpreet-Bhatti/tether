@@ -3,7 +3,15 @@ import { migrate, pgStorage } from "@tether/server";
 import { mutators } from "@tether/tracker-shared";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { createApp } from "../src/app.js";
 
 const url =
@@ -98,5 +106,65 @@ describe("tracker push", () => {
       body: "{",
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("tracker pull", () => {
+  beforeEach(async () => {
+    await sql`truncate entries, change_log, clients`;
+    await sql`update meta set version = 0`;
+  });
+
+  const via = (userId = "u1") => ({
+    headers: { "x-user-id": userId },
+    fetch: ((i, init) => app.request(i, init)) as typeof globalThis.fetch,
+  });
+  const client = () =>
+    createClient({
+      mutators,
+      userId: "u1",
+      push: { url: "http://x/push", backoffMs: 1, ...via() },
+      pull: { url: "http://x/pull", ...via() },
+    });
+  const titles = (c: ReturnType<typeof client>) =>
+    c.read((tx) => tx.scan({ prefix: "issue/" }));
+
+  it("converges two clients editing the same issue", async () => {
+    const a = client();
+    const b = client();
+    await a.mutate.createIssue({ id: "x", title: "X", pos: "a0" });
+    await a.flush();
+    await Promise.all([a.pull(), b.pull()]);
+    expect(titles(b)).toHaveLength(1);
+
+    await a.mutate.updateIssue({ id: "x", title: "from a", status: "doing" });
+    await b.mutate.updateIssue({ id: "x", title: "from b", pos: "a1" });
+    await a.flush();
+    await b.flush();
+    await Promise.all([a.pull(), b.pull()]);
+    const expected = [
+      ["issue/x", { id: "x", title: "from b", status: "doing", pos: "a1" }],
+    ];
+    expect(titles(a)).toEqual(expected);
+    expect(titles(b)).toEqual(expected);
+    expect(
+      (await sql`select value from entries where key = 'issue/x'`)[0]?.value,
+    ).toEqual(expected[0]![1]);
+  });
+
+  it("gives a late-joining client the full state", async () => {
+    const a = client();
+    await a.mutate.createIssue({ id: "y", title: "Y", pos: "a2" });
+    await a.flush();
+    const late = client();
+    await late.pull();
+    expect(titles(late)).toEqual(titles(a));
+  });
+
+  it("answers pull with 401 without a user and 400 on junk", async () => {
+    const post = (headers: Record<string, string>) =>
+      app.request("http://x/pull", { method: "POST", headers, body: "{" });
+    expect((await post({})).status).toBe(401);
+    expect((await post({ "x-user-id": "u1" })).status).toBe(400);
   });
 });
