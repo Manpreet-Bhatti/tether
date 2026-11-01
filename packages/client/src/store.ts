@@ -3,14 +3,46 @@ import type { Tx } from "@tether/protocol";
 const byKey = ([a]: [string, unknown], [b]: [string, unknown]) =>
   a < b ? -1 : a > b ? 1 : 0;
 
+const deepEqual = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || !a || !b) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  return (
+    ka.length === Object.keys(b).length &&
+    ka.every((k) => deepEqual((a as any)[k], (b as any)[k]))
+  );
+};
+
 export class Store {
-  #data = new Map<string, unknown>();
+  #data: Map<string, unknown>;
+
+  constructor(data?: Iterable<[string, unknown]>) {
+    this.#data = new Map(data);
+  }
+
+  clone(): Store {
+    return new Store(this.#data);
+  }
+
+  clear(): void {
+    this.#data.clear();
+  }
+
+  // Takes over `next`'s contents (and leaves `next` unusable). Returns keys whose value differs.
+  replace(next: Store): Set<string> {
+    const changed = new Set<string>();
+    for (const [k, v] of next.#data)
+      if (!deepEqual(this.#data.get(k), v)) changed.add(k);
+    for (const k of this.#data.keys()) if (!next.#data.has(k)) changed.add(k);
+    this.#data = next.#data;
+    return changed;
+  }
 
   get(key: string): unknown {
     return this.#data.get(key);
   }
 
-  // shortcut: linear scan + sort per call, upgrade to a sorted index past ~10k keys.
   scan(prefix: string): [string, unknown][] {
     return [...this.#data].filter(([k]) => k.startsWith(prefix)).sort(byKey);
   }

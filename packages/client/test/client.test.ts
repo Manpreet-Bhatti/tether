@@ -105,3 +105,98 @@ describe("client", () => {
     expect(query).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("pull and rebase", () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const setup = (next: () => object) => {
+    const run = vi.fn();
+    const counted = defineMutator(
+      "set@1",
+      z.object({ k: z.string(), v: z.number() }),
+      async (tx, a) => (run(), tx.set(a.k, a.v)),
+    );
+    const fetch = vi.fn(async (u: RequestInfo | URL, init?: RequestInit) => {
+      if (String(u).endsWith("/pull")) return json(next());
+      const { mutations } = JSON.parse(String(init!.body));
+      return json({
+        results: mutations.map((m: { id: number }) => ({ id: m.id })),
+      });
+    });
+    const c = createClient({
+      mutators: { set: counted },
+      userId: "u",
+      push: { url: "http://x/push", fetch },
+      pull: { url: "http://x/pull", fetch },
+    });
+    return { c, run, fetch };
+  };
+  const put = (key: string, value: unknown) => ({
+    op: "put",
+    key,
+    value,
+    scope: "",
+  });
+
+  it("keeps unconfirmed mutations on top of the server state", async () => {
+    const { c } = setup(() => ({
+      cookie: 1,
+      lastMutationId: 0,
+      patch: [put("k", 5), put("o", 1)],
+    }));
+    await c.mutate.set({ k: "k", v: 9 });
+    await c.flush();
+    await c.pull();
+    expect(c.read((tx) => [tx.get("k"), tx.get("o")])).toEqual([9, 1]);
+  });
+
+  it("replaces a confirmed mutation with server state and never replays it", async () => {
+    const { c, run } = setup(() => ({
+      cookie: 1,
+      lastMutationId: 1,
+      patch: [put("k", 5)],
+    }));
+    await c.mutate.set({ k: "k", v: 9 });
+    await c.flush();
+    await c.pull();
+    expect(c.read((tx) => tx.get("k"))).toBe(5);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back a mutation the server rejected", async () => {
+    const { c } = setup(() => ({ cookie: 1, lastMutationId: 1, patch: [] }));
+    await c.mutate.set({ k: "k", v: 9 });
+    expect(c.read((tx) => tx.get("k"))).toBe(9);
+    await c.flush();
+    await c.pull();
+    expect(c.read((tx) => tx.get("k"))).toBeUndefined();
+  });
+
+  it("notifies only subscriptions whose data changed, and clear drops old keys", async () => {
+    let n = 0;
+    const { c, fetch } = setup(() =>
+      ++n === 1
+        ? { cookie: 1, lastMutationId: 0, patch: [put("a", 1), put("b", 1)] }
+        : n === 2
+          ? { cookie: 2, lastMutationId: 0, patch: [put("a", 2)] }
+          : {
+              cookie: 3,
+              lastMutationId: 0,
+              patch: [{ op: "clear" }, put("b", 1)],
+            },
+    );
+    await c.pull();
+    const a = vi.fn();
+    const b = vi.fn();
+    c.subscribe((tx) => tx.get("a"), a);
+    c.subscribe((tx) => tx.get("b"), b);
+    await c.pull();
+    expect(a).toHaveBeenCalledWith(2);
+    expect(b).not.toHaveBeenCalled();
+    await c.pull();
+    expect(a).toHaveBeenLastCalledWith(undefined);
+    expect(b).not.toHaveBeenCalled();
+    expect(JSON.parse(String(fetch.mock.calls.at(-1)![1]!.body)).cookie).toBe(
+      2,
+    );
+  });
+});
