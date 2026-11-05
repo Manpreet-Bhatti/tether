@@ -2,6 +2,7 @@
   "name": "tether",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=26"
   },

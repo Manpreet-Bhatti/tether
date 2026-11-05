@@ -11,10 +11,13 @@
       "path": "packages/react"
     },
     {
-      "path": "apps/tracker/shared"
+      "path": "packages/server"
     },
     {
-      "path": "packages/server"
+      "path": "packages/testkit"
+    },
+    {
+      "path": "apps/tracker/shared"
     },
     {
       "path": "apps/tracker/server"

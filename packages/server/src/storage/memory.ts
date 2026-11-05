@@ -15,14 +15,18 @@ interface State {
   clients: Map<string, { userId: string; lastMutationId: number }>;
 }
 
-// Round-trips through JSON like jsonb does, so callers can't alias stored values.
 const copy = <T>(v: T): T =>
   v === undefined ? v : JSON.parse(JSON.stringify(v));
 const byKey = <T extends { key: string }>(a: T, b: T) =>
   a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 
 const memTx = (s: State, version: number): Tx => {
-  const record = (key: string, scope: string, op: "put" | "del", value?: unknown) => {
+  const record = (
+    key: string,
+    scope: string,
+    op: "put" | "del",
+    value?: unknown,
+  ) => {
     s.log = s.log.filter(
       (r) => !(r.version === version && r.key === key && r.scope === scope),
     );
@@ -51,7 +55,6 @@ const memTx = (s: State, version: number): Tx => {
   };
 };
 
-// shortcut: rollback clones all state per attempt/transaction, fine for test-sized data; use pgStorage beyond that.
 export function memoryStorage(): ServerStorage {
   const s: State = {
     version: 0,
@@ -61,7 +64,6 @@ export function memoryStorage(): ServerStorage {
     clients: new Map(),
   };
   const restore = (saved: State) => Object.assign(s, saved);
-  // One operation at a time: stands in for the row lock and snapshot isolation Postgres gives.
   let lock: Promise<unknown> = Promise.resolve();
   const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
     const done = lock.then(fn);
@@ -112,14 +114,19 @@ export function memoryStorage(): ServerStorage {
     changesSince: async (cookie) => {
       const latest = new Map<string, State["log"][number]>();
       for (const r of s.log)
-        if (r.version > cookie && r.version >= (latest.get(r.key)?.version ?? 0))
+        if (
+          r.version > cookie &&
+          r.version >= (latest.get(r.key)?.version ?? 0)
+        )
           latest.set(r.key, r);
-      return [...latest.values()].sort(byKey).map(
-        (r): PatchOp =>
-          r.op === "put"
-            ? { op: "put", key: r.key, value: copy(r.value), scope: r.scope }
-            : { op: "del", key: r.key },
-      );
+      return [...latest.values()]
+        .sort(byKey)
+        .map(
+          (r): PatchOp =>
+            r.op === "put"
+              ? { op: "put", key: r.key, value: copy(r.value), scope: r.scope }
+              : { op: "del", key: r.key },
+        );
     },
   };
 
