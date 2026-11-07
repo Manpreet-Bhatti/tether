@@ -64,7 +64,7 @@ export function createPushHandler(
         } catch (e) {
           error = e instanceof Error ? e.message : String(e);
         }
-        // A rejected mutation still consumes its id, so the client's queue moves on.
+
         last = m.id;
         results.push(error === undefined ? { id: m.id } : { id: m.id, error });
         events.push({ userId, clientId, id: m.id, name: m.name, error });
