@@ -1,4 +1,5 @@
 import { PushResponse, type Mutation } from "@tether/protocol";
+import { nextDelay, REQUEST_TIMEOUT_MS, sleep } from "./net.js";
 
 export interface PushOpts {
   url: string;
@@ -10,6 +11,9 @@ export interface PushOpts {
 }
 
 class Fatal extends Error {}
+
+// The server refuses request bodies over 1 MB with 413, which is fatal here, so batches stop well short of it.
+const MAX_BATCH_BYTES = 500_000;
 
 // Sends pending mutations in id order, one batch in flight, retrying until the server answers.
 // A mutation stays in `pending` after its push is acked, until a pull confirms it.
@@ -66,18 +70,28 @@ export class Pusher {
   async #sendBatch(): Promise<void> {
     const { url, headers, schemaVersion = 1, backoffMs = 500 } = this.opts;
     const send = this.opts.fetch ?? fetch;
-    const mutations = this.#unsent().slice(0, 100);
+    const unsent = this.#unsent().slice(0, 100);
+    let size = 0;
+    let n = 0;
+    for (const m of unsent) {
+      size += JSON.stringify(m).length;
+      // Always send at least one: a lone edit over the server cap is a real, fatal error.
+      if (n && size > MAX_BATCH_BYTES) break;
+      n++;
+    }
+    const mutations = unsent.slice(0, n);
     const body = JSON.stringify({
       clientId: this.clientId,
       schemaVersion,
       mutations,
     });
-    for (let delay = backoffMs; ; delay = Math.min(delay * 2, 30_000)) {
+    for (let delay = backoffMs; ; delay = nextDelay(delay)) {
       try {
         const res = await send(url, {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
         if (res.ok) {
           PushResponse.parse(await res.json());
@@ -89,9 +103,7 @@ export class Pusher {
       } catch (e) {
         if (e instanceof Fatal) throw e;
       }
-      await new Promise((r) =>
-        setTimeout(r, delay * (0.5 + Math.random() / 2)),
-      );
+      await sleep(delay);
     }
   }
 }
