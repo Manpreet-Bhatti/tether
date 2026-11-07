@@ -15,9 +15,18 @@ export class PushError extends Error {
   }
 }
 
+export interface MutationEvent {
+  userId: string;
+  clientId: string;
+  id: number;
+  name: string;
+  error?: string;
+}
+
 export function createPushHandler(
   storage: ServerStorage,
   mutators: Mutator<any>[],
+  onMutation?: (e: MutationEvent) => void,
 ) {
   const run = createRegistry(mutators);
 
@@ -27,7 +36,8 @@ export function createPushHandler(
     const { clientId, mutations } = parsed.data;
     const ctx = { userId, location: "server" as const };
 
-    return storage.transact(async (t) => {
+    const events: MutationEvent[] = [];
+    const response = await storage.transact(async (t) => {
       const client = await t.lockClient(clientId, userId);
       if (client.userId !== userId)
         throw new PushError(403, "client belongs to another user");
@@ -57,11 +67,14 @@ export function createPushHandler(
         // A rejected mutation still consumes its id, so the client's queue moves on.
         last = m.id;
         results.push(error === undefined ? { id: m.id } : { id: m.id, error });
+        events.push({ userId, clientId, id: m.id, name: m.name, error });
       }
 
       if (last !== client.lastMutationId)
         await t.setLastMutationId(clientId, last);
       return { results };
     });
+    events.forEach((e) => onMutation?.(e));
+    return response;
   };
 }
