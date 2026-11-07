@@ -7,9 +7,10 @@
     "start": "tsc -b && node dist/main.js"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@hono/node-ws": "^1.3.1",
     "@tether/server": "workspace:*",
     "@tether/tracker-shared": "workspace:*",
-    "@hono/node-server": "^2.1.5",
     "hono": "^4.13.14",
     "postgres": "^3.4.9"
   },
