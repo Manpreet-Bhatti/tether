@@ -53,6 +53,7 @@ const pgTxn = (sql: TransactionSql): PushTxn => ({
   nextVersion: async () => {
     const [row] =
       await sql`update meta set version = version + 1 where id = 1 returning version`;
+    await sql`select pg_notify('tether_poke', '')`;
     return Number(row!.version);
   },
   attempt: (version, fn) =>
@@ -94,18 +95,31 @@ const pgPullTxn = (sql: TransactionSql): PullTxn => ({
     ),
 });
 
-export const pgStorage = (sql: Sql): ServerStorage => ({
-  transact: (fn) => sql.begin(async (t) => fn(pgTxn(t))) as Promise<never>,
-  read: (fn) =>
-    sql.begin("isolation level repeatable read read only", async (t) =>
-      fn(pgPullTxn(t)),
-    ) as Promise<never>,
-  compactLog: async (retainVersions) => {
-    await sql.begin(async (t) => {
-      const [row] = await t`
+export const pgStorage = (sql: Sql): ServerStorage => {
+  const subs = new Set<() => void>();
+  let listening: Promise<unknown> | undefined;
+  const fanout = () => subs.forEach((f) => f());
+  return {
+    onChange: (cb) => {
+      subs.add(cb);
+      listening ??= sql.listen("tether_poke", fanout, fanout).catch((e) => {
+        listening = undefined;
+        console.error("tether: LISTEN failed", e);
+      });
+      return () => void subs.delete(cb);
+    },
+    transact: (fn) => sql.begin(async (t) => fn(pgTxn(t))) as Promise<never>,
+    read: (fn) =>
+      sql.begin("isolation level repeatable read read only", async (t) =>
+        fn(pgPullTxn(t)),
+      ) as Promise<never>,
+    compactLog: async (retainVersions) => {
+      await sql.begin(async (t) => {
+        const [row] = await t`
         update meta set min_retained_version = greatest(min_retained_version, version - ${retainVersions})
         where id = 1 returning min_retained_version as floor`;
-      await t`delete from change_log where version <= ${row!.floor}`;
-    });
-  },
-});
+        await t`delete from change_log where version <= ${row!.floor}`;
+      });
+    },
+  };
+};

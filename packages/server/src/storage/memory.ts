@@ -130,16 +130,24 @@ export function memoryStorage(): ServerStorage {
     },
   };
 
+  const subs = new Set<() => void>();
   return {
+    onChange: (cb) => {
+      subs.add(cb);
+      return () => void subs.delete(cb);
+    },
     transact: (fn) =>
       exclusive(async () => {
         const saved = structuredClone(s);
+        let result;
         try {
-          return await fn(push);
+          result = await fn(push);
         } catch (e) {
           restore(saved);
           throw e;
         }
+        if (s.version !== saved.version) subs.forEach((f) => f());
+        return result;
       }),
     read: (fn) => exclusive(() => fn(pull)),
     compactLog: (retainVersions) =>
