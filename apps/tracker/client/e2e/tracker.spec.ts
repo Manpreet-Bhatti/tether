@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
+import { sign } from "hono/jwt";
 
 const titles = (page: Page) =>
   page
@@ -52,4 +53,24 @@ test("mutation reaches the DOM within 16ms", async ({ page }) => {
       }),
   );
   expect(ms).toBeLessThan(16);
+});
+
+const synced = async (browser: Browser, user: string) => {
+  const token = await sign(
+    { sub: user, exp: Math.floor(Date.now() / 1000) + 300 },
+    process.env.JWT_SECRET!,
+    "HS256",
+  );
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(`/?user=${user}&token=${token}`);
+  return page;
+};
+
+test("a change in one window shows up in another within a round trip", async ({
+  browser,
+}) => {
+  const [a, b] = [await synced(browser, "u1"), await synced(browser, "u1")];
+  const title = `sync-${Date.now()}`;
+  await add(a, title);
+  await expect.poll(() => titles(b), { timeout: 1000 }).toContain(title);
 });
