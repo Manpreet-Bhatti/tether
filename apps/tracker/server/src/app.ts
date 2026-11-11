@@ -16,6 +16,7 @@ import type { WSContext } from "hono/ws";
 export interface AppOpts {
   secret: string;
   maxBodyBytes?: number;
+  schemaVersions?: readonly number[];
   rate?: { burst: number; perSec: number };
   log?: (line: object) => void;
 }
@@ -41,10 +42,15 @@ export function createApp(storage: ServerStorage, opts: AppOpts) {
     rateLimited: 0,
     pokesSent: 0,
   };
-  const push = createPushHandler(storage, Object.values(mutators), (e) => {
-    metrics[e.error === undefined ? "mutationsOk" : "mutationsRejected"]++;
-    log({ ev: "mutation", at: new Date().toISOString(), ...e });
-  });
+  const push = createPushHandler(
+    storage,
+    Object.values(mutators),
+    (e) => {
+      metrics[e.error === undefined ? "mutationsOk" : "mutationsRejected"]++;
+      log({ ev: "mutation", at: new Date().toISOString(), ...e });
+    },
+    { schemaVersions: opts.schemaVersions },
+  );
   const pull = createPullHandler(storage);
 
   const app = new Hono<{ Variables: { userId: string } }>();

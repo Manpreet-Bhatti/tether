@@ -60,6 +60,19 @@ beforeEach(async () => {
 });
 
 describe("handlePush", () => {
+  it("answers resetRequired for a schemaVersion it no longer serves, applying nothing", async () => {
+    const gated = createPushHandler(pgStorage(sql), [inc], undefined, {
+      schemaVersions: [2, 3],
+    });
+    expect(await gated("u1", req("c1", [m(1)]))).toEqual({
+      results: [],
+      resetRequired: true,
+    });
+    expect(await entry("n")).toBeUndefined();
+    const ok = await gated("u1", { ...req("c1", [m(1)]), schemaVersion: 2 });
+    expect(ok).toEqual({ results: [{ id: 1 }] });
+  });
+
   it("applies a retried push once", async () => {
     const body = req("c1", [m(1), m(2)]);
     const first = await push("u1", body);

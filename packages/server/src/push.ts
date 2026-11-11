@@ -27,13 +27,21 @@ export function createPushHandler(
   storage: ServerStorage,
   mutators: Mutator<any>[],
   onMutation?: (e: MutationEvent) => void,
+  // Client schemaVersions this server still serves. Keep old mutator versions in `mutators`
+  // until their clients drain; drop a schemaVersion here to force those clients to reset.
+  opts: { schemaVersions?: readonly number[] } = {},
 ) {
   const run = createRegistry(mutators);
 
   return async (userId: string, body: unknown): Promise<PushResponse> => {
     const parsed = PushRequest.safeParse(body);
     if (!parsed.success) throw new PushError(400, "invalid push request");
-    const { clientId, mutations } = parsed.data;
+    const { clientId, schemaVersion, mutations } = parsed.data;
+    if (
+      opts.schemaVersions &&
+      !opts.schemaVersions.includes(schemaVersion)
+    )
+      return { results: [], resetRequired: true };
     const ctx = { userId, location: "server" as const };
 
     const events: MutationEvent[] = [];
