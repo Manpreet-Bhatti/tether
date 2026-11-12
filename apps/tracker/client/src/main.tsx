@@ -8,7 +8,10 @@ import { App } from "./App.js";
 const q = new URLSearchParams(location.search);
 const token = q.get("token");
 const headers = { authorization: `Bearer ${token}` };
+const user = q.get("user") ?? "local";
 const sync = token && {
+  persist: { name: `tether:${user}` },
+  onReset: () => location.reload(), // local data is gone; reload for the current app version
   push: {
     url: "/push",
     headers,
@@ -22,7 +25,7 @@ const sync = token && {
 };
 const client = createClient({
   mutators,
-  userId: q.get("user") ?? "local",
+  userId: user,
   ...sync,
 });
 createRoot(document.getElementById("root")!).render(
