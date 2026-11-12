@@ -200,3 +200,14 @@ describe("pull and rebase", () => {
     );
   });
 });
+
+describe("close", () => {
+  it("rejects mutations instead of leaving them pending forever", async () => {
+    const c = createClient({ mutators, userId: "u" });
+    await c.mutate.set({ k: "a", v: 1 });
+    c.close();
+    await expect(c.mutate.set({ k: "b", v: 2 })).rejects.toThrow(
+      "client closed",
+    );
+  });
+});

@@ -12,5 +12,14 @@ export class HttpError extends Error {
 
 export const nextDelay = (ms: number) => Math.min(ms * 2, MAX_BACKOFF_MS);
 
+// Jittered delay that ends early when the browser comes back online.
 export const sleep = (ms: number) =>
-  new Promise<void>((r) => setTimeout(r, ms * (0.5 + Math.random() / 2)));
+  new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      globalThis.removeEventListener?.("online", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms * (0.5 + Math.random() / 2));
+    globalThis.addEventListener?.("online", done);
+  });

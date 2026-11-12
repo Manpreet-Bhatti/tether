@@ -12,9 +12,11 @@
     "dist"
   ],
   "dependencies": {
-    "@tether/protocol": "workspace:*"
+    "@tether/protocol": "workspace:*",
+    "idb": "^8.0.4"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.8",
     "zod": "^4.6.7"
   }
 }

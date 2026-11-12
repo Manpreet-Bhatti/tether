@@ -8,9 +8,11 @@ export interface PushOpts {
   schemaVersion?: number;
   backoffMs?: number; // first retry delay, doubles up to 30s
   onError?: (e: Error) => void; // push stopped on a non-retryable response
+  onReset?: () => void; // server does not know this schemaVersion: local data must go
 }
 
 class Fatal extends Error {}
+class Reset extends Fatal {}
 
 // The server refuses request bodies over 1 MB with 413, which is fatal here, so batches stop well short of it.
 const MAX_BATCH_BYTES = 500_000;
@@ -18,16 +20,27 @@ const MAX_BATCH_BYTES = 500_000;
 // Sends pending mutations in id order, one batch in flight, retrying until the server answers.
 // A mutation stays in `pending` after its push is acked, until a pull confirms it.
 export class Pusher {
-  #pending: Mutation[] = [];
-  #sentUpTo = 0;
-  #nextId = 1;
+  #pending: Mutation[];
+  #sentUpTo = 0; // restored mutations start unsent; the server skips ones it already has
+  #nextId: number;
   #sending = false;
+  #stopped = false;
   #done: Promise<void> = Promise.resolve();
 
   constructor(
     private clientId: string,
     private opts: PushOpts,
-  ) {}
+    restored?: { pending: Mutation[]; nextId: number },
+  ) {
+    this.#pending = restored?.pending ?? [];
+    this.#nextId = restored?.nextId ?? 1;
+    this.#kick();
+  }
+
+  // Ends the loop. Pending mutations stay queued but are never sent.
+  stop(): void {
+    this.#stopped = true;
+  }
 
   get pending(): readonly Mutation[] {
     return this.#pending;
@@ -36,18 +49,21 @@ export class Pusher {
   // Drops mutations the server has applied, as reported by a pull.
   confirm(lastMutationId: number): void {
     this.#pending = this.#pending.filter((m) => m.id > lastMutationId);
+    // Local storage may have lost mutations the server has: never reuse their ids.
+    this.#nextId = Math.max(this.#nextId, lastMutationId + 1);
   }
 
   #unsent = () => this.#pending.filter((m) => m.id > this.#sentUpTo);
 
-  enqueue(name: string, args: unknown): void {
-    this.#pending.push({
-      id: this.#nextId++,
-      name,
-      args,
-      timestamp: Date.now(),
-    });
-    if (this.#sending) return;
+  enqueue(name: string, args: unknown): Mutation {
+    const m = { id: this.#nextId++, name, args, timestamp: Date.now() };
+    this.#pending.push(m);
+    this.#kick();
+    return m;
+  }
+
+  #kick(): void {
+    if (this.#sending || this.#stopped || !this.#unsent().length) return;
     this.#sending = true;
     this.#done = this.#loop();
   }
@@ -59,9 +75,10 @@ export class Pusher {
 
   async #loop(): Promise<void> {
     try {
-      while (this.#unsent().length) await this.#sendBatch();
+      while (!this.#stopped && this.#unsent().length) await this.#sendBatch();
     } catch (e) {
-      this.opts.onError?.(e as Error);
+      if (e instanceof Reset) this.opts.onReset?.();
+      else this.opts.onError?.(e as Error);
     } finally {
       this.#sending = false;
     }
@@ -85,7 +102,7 @@ export class Pusher {
       schemaVersion,
       mutations,
     });
-    for (let delay = backoffMs; ; delay = nextDelay(delay)) {
+    for (let delay = backoffMs; !this.#stopped; delay = nextDelay(delay)) {
       try {
         const res = await send(url, {
           method: "POST",
@@ -94,7 +111,8 @@ export class Pusher {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
         if (res.ok) {
-          PushResponse.parse(await res.json());
+          if (PushResponse.parse(await res.json()).resetRequired)
+            throw new Reset();
           this.#sentUpTo = mutations.at(-1)!.id;
           return;
         }
