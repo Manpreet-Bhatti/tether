@@ -13,6 +13,11 @@ export interface MutatorCtx {
   location: "client" | "server";
 }
 
+// Throw from a server-side mutator to refuse a write the user may not make.
+export class ForbiddenError extends Error {
+  override name = "ForbiddenError";
+}
+
 export interface Mutator<A = unknown> {
   name: string; // versioned, e.g. "createIssue@1"
   schema: z.ZodType<A>;
@@ -23,12 +28,21 @@ export const defineMutator = <S extends z.ZodType>(
   name: string,
   schema: S,
   fn: (tx: Tx, args: z.output<S>, ctx: MutatorCtx) => Promise<void>,
-): Mutator<z.output<S>> => ({ name, schema: schema as z.ZodType<z.output<S>>, fn });
+): Mutator<z.output<S>> => ({
+  name,
+  schema: schema as z.ZodType<z.output<S>>,
+  fn,
+});
 
 // Looks up by wire name and Zod-parses args before running. Client and server share this.
 export function createRegistry(mutators: Mutator<any>[]) {
   const byName = new Map(mutators.map((m) => [m.name, m]));
-  return async (tx: Tx, name: string, args: unknown, ctx: MutatorCtx): Promise<void> => {
+  return async (
+    tx: Tx,
+    name: string,
+    args: unknown,
+    ctx: MutatorCtx,
+  ): Promise<void> => {
     const m = byName.get(name);
     if (!m) throw new Error(`unknown mutator: ${name}`);
     await m.fn(tx, m.schema.parse(args), ctx);

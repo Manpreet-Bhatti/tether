@@ -1,7 +1,14 @@
 import { z } from "zod";
 
 export const Json: z.ZodType<unknown> = z.lazy(() =>
-  z.union([z.null(), z.boolean(), z.number(), z.string(), z.array(Json), z.record(z.string(), Json)]),
+  z.union([
+    z.null(),
+    z.boolean(),
+    z.number(),
+    z.string(),
+    z.array(Json),
+    z.record(z.string(), Json),
+  ]),
 );
 
 export const Mutation = z.object({
@@ -18,24 +25,31 @@ export const PushRequest = z.object({
 });
 
 export const PushResponse = z.object({
-  results: z.array(z.object({ id: z.number().int().positive(), error: z.string().optional() })),
+  results: z.array(
+    z.object({ id: z.number().int().positive(), error: z.string().optional() }),
+  ),
   resetRequired: z.boolean().optional(),
 });
 
 export const PullRequest = z.object({
   clientId: z.string().min(1),
-  cookie: z.number().int().nonnegative().nullable(), // null = first sync
-  scopes: z.array(z.string()),
+  cookie: z.record(z.string(), z.number().int().nonnegative()),
+  scopes: z.array(z.string().max(256)).max(100),
 });
 
 export const PatchOp = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("put"), key: z.string(), value: Json, scope: z.string() }),
-  z.object({ op: z.literal("del"), key: z.string() }),
-  z.object({ op: z.literal("clear") }),
+  z.object({
+    op: z.literal("put"),
+    key: z.string(),
+    value: Json,
+    scope: z.string(),
+  }),
+  z.object({ op: z.literal("del"), key: z.string(), scope: z.string() }),
+  z.object({ op: z.literal("clear"), scope: z.string() }),
 ]);
 
 export const PullResponse = z.object({
-  cookie: z.number().int().nonnegative(),
+  cookie: z.record(z.string(), z.number().int().nonnegative()),
   lastMutationId: z.number().int().nonnegative(),
   patch: z.array(PatchOp),
   resetRequired: z.boolean().optional(),
